@@ -1,7 +1,57 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import pandas as pd
-import tkinter.font as tkf
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+import numpy as np
+
+def predict_future_values(selected_player, selected_rows):
+    # Assume 'Year' is the predictor variable
+    predictor_column = 'Year'
+
+    if predictor_column in selected_rows.columns:
+        # Select features (excluding the predictor column and non-numerical columns)
+        non_numerical_columns = ['Age', 'Name', 'Team', 'Pos', 'Player']
+        features = selected_rows.drop([predictor_column] + non_numerical_columns, axis=1)
+
+        # Select the target variable (all columns except the non-numerical ones)
+        target_variable = selected_rows.drop(non_numerical_columns, axis=1).columns
+
+        if not target_variable.empty:
+            # Split the data into training and testing sets
+            X_train, X_test, y_train, y_test = train_test_split(
+                selected_rows[[predictor_column] + features.columns], selected_rows[target_variable], test_size=0.2, random_state=42)
+
+            # Train a linear regression model
+            model = LinearRegression()
+            model.fit(X_train, y_train)
+
+            # Make predictions for future years
+            future_years = np.arange(selected_rows[predictor_column].max() + 1, selected_rows[predictor_column].max() + 6).reshape(-1, 1)
+            future_features = pd.DataFrame(index=future_years, columns=features.columns)
+
+            # Fill future features with meaningful values or use the average of existing values
+            future_features.fillna(features.mean(), inplace=True)
+
+            # Predict future values
+            future_predictions = model.predict(pd.concat([future_years, future_features], axis=1))
+
+            # Display the predictions in a new window
+            result_window = tk.Toplevel(window)
+            result_window.title("Future Predictions")
+
+            result_label = ttk.Label(result_window, text=f"Predicted values for the future years:\n\n{future_predictions}", font=('Helvetica', 12))
+            result_label.pack(pady=10)
+
+        else:
+            messagebox.showerror("Error", "No target variable found in the dataset.")
+    else:
+        messagebox.showerror("Error", "Predictor column not found.")
 
 def on_treeview_scroll(*args):
     tree.yview(*args)
@@ -98,36 +148,61 @@ def show_selected_row_data(event):
         selected_row_data = tree.item(selected_item, 'values')
         show_data_table(selected_row_data)
 
+def update_radar_chart(selected_player, selected_year, ax, canvas):
+    global selected_rows
+
+    has_data_selected_year = not selected_rows[(selected_rows['Year'] == selected_year) & (selected_rows['Player'] == selected_player)].empty
+
+    # Clear the existing radar chart
+    ax.clear()
+
+    if has_data_selected_year:
+        radar_columns = ['3P%', '2P%', 'AST', 'FT', 'PTS']
+        values = selected_rows[(selected_rows['Year'] == selected_year) & (selected_rows['Player'] == selected_player)][radar_columns].values.flatten().tolist()
+        values += values[:1]  # Close the plot
+        ax.plot(np.linspace(0, 2 * np.pi, len(values)), values, label=selected_year)
+        ax.set_xticks(np.linspace(0, 2 * np.pi, len(values))[:-1])
+        ax.set_xticklabels(radar_columns)
+        ax.set_title(f"{selected_player}'s Data for {selected_year}")
+        ax.legend(loc='upper right')
+        canvas.draw()
+    else:
+        ttk.Label(data_window, text=f"No data available for {selected_year}.", font=('Helvetica', 12)).pack(pady=10)
+
 def show_data_table(row_data):
+    global selected_rows, data_window, canvas
+
     selected_player = row_data[0]
     selected_rows = df[df['Player'] == selected_player]
 
     data_window = tk.Toplevel(window)
     data_window.title("Selected Player Data")
 
-    selected_tree = ttk.Treeview(data_window, columns=all_columns, show="headings", style="Treeview")
+    title_label = ttk.Label(data_window, text=f"Player: {selected_player}", font=('Helvetica', 14, 'bold'))
+    title_label.pack(pady=10)
 
-    for col in all_columns:
-        selected_tree.heading(col, text=col, anchor='w')
+    areachart_year = ttk.Combobox(data_window, state='readonly', values=selected_rows['Year'].unique())
+    areachart_year.pack(pady=10)
+    areachart_year.set(selected_rows['Year'].max())
 
-    for i, row in selected_rows.iterrows():
-        selected_tree.insert("", "end", values=list(row))
+    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
+    canvas = FigureCanvasTkAgg(fig, master=data_window)
+    canvas_widget = canvas.get_tk_widget()
+    canvas_widget.pack(expand=True, fill='both')
 
-    selected_vsb = ttk.Scrollbar(data_window, orient="vertical", command=selected_tree.yview)
-    selected_vsb.pack(side='right')
-    selected_tree.configure(yscrollcommand=selected_vsb.set)
+    toolbar = NavigationToolbar2Tk(canvas, data_window)
+    canvas.get_tk_widget().pack(side='top', fill='both', expand=1)
+    canvas.draw()
+    canvas.get_tk_widget().pack(side='top', fill='both', expand=1)
 
-    style.configure("Treeview.Heading", font=('Helvetica', 10, 'bold'))
-    style.configure("Treeview", font=('Helvetica', 10))
-    style.configure("Treeview", rowheight=25)
+    # Bind the update_radar_chart function to the ComboboxSelected event
+    areachart_year.bind("<<ComboboxSelected>>", lambda event: update_radar_chart(selected_player, areachart_year.get(), ax, canvas))
 
-    selected_tree.configure(height=15 + 1)
+    update_radar_chart(selected_player, areachart_year.get(), ax, canvas)
 
-    for col in all_columns:
-        max_width = max(50, tkf.Font().measure(col), *[tkf.Font().measure(str(val)) for val in selected_rows[col]])
-        selected_tree.column(col, width=max_width)
-
-    selected_tree.pack(expand=True, fill='both')
+    # Add a button for predicting future values
+    predict_button = ttk.Button(data_window, text="Predict Future Values", command=lambda: predict_future_values(selected_player, selected_rows))
+    predict_button.pack(pady=10)
 
 def enable_controls():
     reset_button['state'] = 'active'
@@ -150,7 +225,7 @@ def close_csv():
     pos_combobox['state'] = 'disabled'
     upload_button['state'] = 'active'
     close_csv_button['state'] = 'disabled'
-    search_entry['stae'] = 'disabled'
+    search_entry['state'] = 'disabled'
 
 
 error_message_shown = False
@@ -199,8 +274,8 @@ def perform_search():
 
 # Create the main window
 window = tk.Tk()
+window.title("NBA PLAYER STATS")
 
-window.title("Tkinter Window with Pandas Table")
 
 screen_width = window.winfo_screenwidth()
 screen_height = window.winfo_screenheight()
