@@ -4,12 +4,14 @@ import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 import numpy as np
 
+
+def on_close():
+    window.destroy()
 def predict_future_values(selected_player, selected_rows):
     # Assume 'Year' is the predictor variable
     predictor_column = 'Year'
@@ -148,26 +150,57 @@ def show_selected_row_data(event):
         selected_row_data = tree.item(selected_item, 'values')
         show_data_table(selected_row_data)
 
-def update_radar_chart(selected_player, selected_year, ax, canvas):
-    global selected_rows
 
-    has_data_selected_year = not selected_rows[(selected_rows['Year'] == selected_year) & (selected_rows['Player'] == selected_player)].empty
+def update_radar_chart(selected_player, selected_year, ax, canvas, data_window, filtered_rows=None):
+    global selected_rows
 
     # Clear the existing radar chart
     ax.clear()
 
-    if has_data_selected_year:
-        radar_columns = ['3P%', '2P%', 'AST', 'FT', 'PTS']
-        values = selected_rows[(selected_rows['Year'] == selected_year) & (selected_rows['Player'] == selected_player)][radar_columns].values.flatten().tolist()
+    if filtered_rows is None:
+        # Use the original data if no filtered data is provided
+        filtered_rows = selected_rows
+
+    # Assuming these are your columns of interest
+    radar_columns = ['3P%', '2P%', 'AST', 'FT', 'PTS']
+
+    # Get unique teams for the selected player and year
+    unique_teams = filtered_rows[(filtered_rows['Year'] == selected_year) & (filtered_rows['Player'] == selected_player)]['Tm'].unique()
+
+    # Define a colormap for teams
+    team_colors = plt.cm.get_cmap('tab10', len(unique_teams))
+
+    # Plot the radar chart for each team
+    for i, team in enumerate(unique_teams):
+        team_filtered_rows = filtered_rows[(filtered_rows['Year'] == selected_year) & (filtered_rows['Player'] == selected_player) & (filtered_rows['Tm'] == team)]
+        values = team_filtered_rows[radar_columns].values.flatten().tolist()
         values += values[:1]  # Close the plot
-        ax.plot(np.linspace(0, 2 * np.pi, len(values)), values, label=selected_year)
-        ax.set_xticks(np.linspace(0, 2 * np.pi, len(values))[:-1])
-        ax.set_xticklabels(radar_columns)
-        ax.set_title(f"{selected_player}'s Data for {selected_year}")
-        ax.legend(loc='upper right')
-        canvas.draw()
-    else:
-        ttk.Label(data_window, text=f"No data available for {selected_year}.", font=('Helvetica', 12)).pack(pady=10)
+
+        # Use a different color for each team
+        color = team_colors(i)
+
+        # Plot the radar chart line with a label for the team
+        ax.plot(np.linspace(0, 2 * np.pi, len(values)), values, label=f"{team} ({selected_year})", color=color)
+
+        # Plot the values inside the radar chart
+        for j, value in enumerate(values):
+            angle = (j / len(values)) * 2 * np.pi
+            ax.text(angle, value, f"{value:.2f}", color=color, ha='center', va='bottom', fontsize=10)
+
+    # Connect the data points with lines
+    ax.plot(np.linspace(0, 2 * np.pi, len(values)), values, color='black', linewidth=1, linestyle='solid')
+
+    # Set the labels for each axis
+    ax.set_xticks(np.linspace(0, 2 * np.pi, len(values))[:-1])
+    ax.set_xticklabels(radar_columns)
+
+    # Add labels and legend
+    ax.set_title(f"{selected_player}'s Data for {selected_year}")
+    ax.legend(loc='upper right')
+
+    # Update the canvas
+    canvas.draw()
+
 
 def show_data_table(row_data):
     global selected_rows, data_window, canvas
@@ -175,34 +208,104 @@ def show_data_table(row_data):
     selected_player = row_data[0]
     selected_rows = df[df['Player'] == selected_player]
 
+    # Filter out empty values in the 'Year' column
+    unique_years = selected_rows['Year'].dropna().unique()
+
     data_window = tk.Toplevel(window)
     data_window.title("Selected Player Data")
 
-    title_label = ttk.Label(data_window, text=f"Player: {selected_player}", font=('Helvetica', 14, 'bold'))
+    # Create frames for left and right sides
+    left_frame = ttk.Frame(data_window)
+    left_frame.pack(side='left', padx=10)
+
+    right_frame = ttk.Frame(data_window)
+    right_frame.pack(side='left', padx=10)
+
+    # Set a custom style for the labels
+    style = ttk.Style()
+    style.configure('Label.TLabel', font=('Helvetica', 14))
+
+    title_label = ttk.Label(left_frame, text=f"Player: {selected_player}", style='Label.TLabel')
     title_label.pack(pady=10)
 
-    areachart_year = ttk.Combobox(data_window, state='readonly', values=selected_rows['Year'].unique())
+    # Convert unique years to strings without brackets and quotation marks
+    unique_years_str = list(map(str, unique_years))
+
+    areachart_year = ttk.Combobox(left_frame, state='readonly', values=unique_years_str)
     areachart_year.pack(pady=10)
-    areachart_year.set(selected_rows['Year'].max())
+    areachart_year.set(str(unique_years.max()))  # Set default value to the latest year
+
+    rank_label = ttk.Label(left_frame, text="Rank:", style='Label.TLabel')
+    rank_label.pack(padx=(0, 10), anchor='w')  # 'w' stands for west, aligning to the left
+
+    pos_label = ttk.Label(left_frame, text="Position:", style='Label.TLabel')
+    pos_label.pack(padx=(0, 10), anchor='w')
+
+    age_label = ttk.Label(left_frame, text="Age:", style='Label.TLabel')
+    age_label.pack(padx=(0, 10), anchor='w')
+
+    team_label = ttk.Label(left_frame, text="Team:", style='Label.TLabel')
+    team_label.pack(padx=(0, 10), anchor='w')
 
     fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
-    canvas = FigureCanvasTkAgg(fig, master=data_window)
+    canvas = FigureCanvasTkAgg(fig, master=right_frame)
     canvas_widget = canvas.get_tk_widget()
     canvas_widget.pack(expand=True, fill='both')
 
-    toolbar = NavigationToolbar2Tk(canvas, data_window)
-    canvas.get_tk_widget().pack(side='top', fill='both', expand=1)
     canvas.draw()
-    canvas.get_tk_widget().pack(side='top', fill='both', expand=1)
+    canvas_widget.pack(side='top', fill='both', expand=1)
 
-    # Bind the update_radar_chart function to the ComboboxSelected event
-    areachart_year.bind("<<ComboboxSelected>>", lambda event: update_radar_chart(selected_player, areachart_year.get(), ax, canvas))
+    # Bind the filter_by_selected_year function to the ComboboxSelected event
+    areachart_year.bind("<<ComboboxSelected>>",
+                        lambda event: filter_by_selected_year(selected_player, areachart_year.get(), canvas, ax,
+                                                              rank_label, pos_label, age_label, team_label))
 
-    update_radar_chart(selected_player, areachart_year.get(), ax, canvas)
+    filter_by_selected_year(selected_player, areachart_year.get(), canvas, ax, rank_label, pos_label, age_label,
+                            team_label)
 
-    # Add a button for predicting future values
-    predict_button = ttk.Button(data_window, text="Predict Future Values", command=lambda: predict_future_values(selected_player, selected_rows))
-    predict_button.pack(pady=10)
+
+def filter_by_selected_year(selected_player, selected_year, canvas, ax, rank_label, pos_label, age_label, team_label):
+    global selected_rows, data_window
+
+    # Filter the data for the selected year
+    filtered_rows = selected_rows[
+        (selected_rows['Year'] == selected_year) & (selected_rows['Player'] == selected_player)]
+
+    # Clear the existing radar chart
+    ax.clear()
+
+    if not filtered_rows.empty:
+        # Assuming these are your columns of interest
+        radar_columns = ['3P%', '2P%', 'AST', 'FT', 'PTS']
+
+        # Plot the radar chart for the filtered data
+        for i, (_, row) in enumerate(filtered_rows.iterrows()):
+            values = row[radar_columns].values.flatten().tolist()
+            values += values[:1]  # Close the plot
+            color = plt.cm.get_cmap('tab10')(i)  # Get a distinct color for each team
+            ax.plot(np.linspace(0, 2 * np.pi, len(values)), values, label=row['Tm'], color=color)
+
+        # Set the labels for each axis
+        ax.set_xticks(np.linspace(0, 2 * np.pi, len(values))[:-1])
+        ax.set_xticklabels(radar_columns)
+
+        # Add labels and legend
+        ax.set_title(f"{selected_player}'s Data for {selected_year}")
+        ax.legend(loc='upper right')
+
+        # Update the canvas
+        canvas.draw()
+
+        # Display Rank, Position, Age, and Team information
+        rank_label.config(text=f"Rank: {filtered_rows['Rk'].values[0]}")
+        pos_label.config(text=f"Position: {filtered_rows['Pos'].values[0]}")
+        age_label.config(text=f"Age: {filtered_rows['Age'].values[0]}")
+
+        # Display teams in a column
+        teams = '\n'.join(filtered_rows['Tm'].astype(str))
+        team_label.config(text=f"Team:\n{teams}")
+    else:
+        ttk.Label(data_window, text=f"No data available for {selected_year}.", font=('Helvetica', 12)).pack(pady=10)
 
 def enable_controls():
     reset_button['state'] = 'active'
@@ -274,8 +377,8 @@ def perform_search():
 
 # Create the main window
 window = tk.Tk()
-window.title("NBA PLAYER STATS")
 
+window.title("NBA PLAYER STATS")
 
 screen_width = window.winfo_screenwidth()
 screen_height = window.winfo_screenheight()
@@ -336,7 +439,13 @@ filter_button = ttk.Button(window, text="Apply Filter", command=filter_by_select
 filter_button.pack(side='right')
 
 year_combobox.pack(side='right')
+year_label = ttk.Label(window, text="Years:")
+year_label.pack(side='right', padx=(10, 0))
+
+
 pos_combobox.pack(side='right')
+pos_label = ttk.Label(window, text="Position:")
+pos_label.pack(side='right', padx=(10, 0))
 
 
 search_label = ttk.Label(window, text="Search Player:")
@@ -350,5 +459,7 @@ search_entry.bind('<KeyRelease>', search_players)  # Bind KeyRelease event to th
 search_entry.bind("<KeyRelease>", search_players)
 
 tree.bind("<<TreeviewSelect>>", show_selected_row_data)
+
+window.protocol("WM_DELETE_WINDOW", on_close)
 
 window.mainloop()
