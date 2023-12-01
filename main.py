@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 
 
@@ -162,7 +162,7 @@ def update_radar_chart(selected_player, selected_year, ax, canvas, data_window, 
         filtered_rows = selected_rows
 
     # Assuming these are your columns of interest
-    radar_columns = ['3P%', '2P%', 'AST', 'FT', 'PTS']
+    radar_columns = ['G', 'GS', 'MP', 'FG', 'FGA', 'FG%', '3P', '3PA', '3P%', '2P', '2PA', '2P%', 'eFG%', 'FT', 'FTA', 'FT%', 'ORB', 'DRB', 'TRB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS']
 
     # Get unique teams for the selected player and year
     unique_teams = filtered_rows[(filtered_rows['Year'] == selected_year) & (filtered_rows['Player'] == selected_player)]['Tm'].unique()
@@ -202,8 +202,73 @@ def update_radar_chart(selected_player, selected_year, ax, canvas, data_window, 
     canvas.draw()
 
 
+details_window = None
+
+
 def show_data_table(row_data):
     global selected_rows, data_window, canvas
+
+    def show_more_details():
+        global details_window  # Declare details_window as a global variable
+
+        # Check if details_window exists and destroy it if it does
+        if details_window:
+            details_window.destroy()
+
+        selected_year = areachart_year.get()
+
+        details_window = tk.Toplevel(window)
+        details_window.title(f"Player Details - {selected_year}")
+
+        # Filter rows based on the selected year
+        details_rows = selected_rows[
+            (selected_rows['Player'] == selected_player) & (selected_rows['Year'] == selected_year)]
+
+        # Check if there is data available
+        if details_rows.empty:
+            messagebox.showinfo("No Data", "No data available for the selected player and year.")
+            details_window.destroy()
+            return
+
+        # Set columns to display in the radar chart
+        radar_columns = ['G', 'GS', 'MP', 'FG', 'FGA', 'FG%', '3P', '3PA', '3P%', '2P', '2PA', '2P%', 'eFG%', 'FT', 'FTA', 'FT%', 'ORB', 'DRB', 'TRB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS']
+
+
+        # Create a Figure and Axis for the radar chart
+        fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
+
+        # Normalize data to be between 0 and 1 for radar chart
+        scaler = MinMaxScaler()
+        normalized_data = scaler.fit_transform(details_rows[radar_columns])
+
+        # Number of data points
+        num_columns = len(radar_columns)
+
+        # Compute angles for each axis
+        angles = np.linspace(0, 2 * np.pi, num_columns, endpoint=False).tolist()
+
+        # The plot is circular, so we need to "close the loop" and connect the first and last points
+        values = normalized_data.flatten().tolist()
+        values += values[:1]
+        angles += angles[:1]
+
+        # Plot the data
+        ax.fill(angles, values, color='blue', alpha=0.25)
+        ax.set_yticklabels([])  # Remove radial labels
+
+        # Add labels
+        ax.set_thetagrids([angle * 180 / np.pi for angle in angles[:-1]], radar_columns)
+
+        # Add a title
+        ax.set_title(f"{selected_player} - {selected_year}")
+
+        # Create a Tkinter canvas to embed the Matplotlib chart
+        canvas = FigureCanvasTkAgg(fig, master=details_window)
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.pack(expand=True, fill='both')
+
+        # Draw the chart on the canvas
+        canvas.draw()
 
     selected_player = row_data[0]
     selected_rows = df[df['Player'] == selected_player]
@@ -246,6 +311,9 @@ def show_data_table(row_data):
 
     team_label = ttk.Label(left_frame, text="Team:", style='Label.TLabel')
     team_label.pack(padx=(0, 10), anchor='w')
+
+    more_details_button = ttk.Button(left_frame, text="More Details", command=show_more_details)
+    more_details_button.pack(pady=10)
 
     fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
     canvas = FigureCanvasTkAgg(fig, master=right_frame)
