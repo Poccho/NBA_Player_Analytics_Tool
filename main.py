@@ -12,48 +12,46 @@ import numpy as np
 
 def on_close():
     window.destroy()
-def predict_future_values(selected_player, selected_rows):
-    # Assume 'Year' is the predictor variable
-    predictor_column = 'Year'
+def train_prediction_model():
+    global df
 
-    if predictor_column in selected_rows.columns:
-        # Select features (excluding the predictor column and non-numerical columns)
-        non_numerical_columns = ['Age', 'Name', 'Team', 'Pos', 'Player']
-        features = selected_rows.drop([predictor_column] + non_numerical_columns, axis=1)
+    # Check if the dataframe is not empty
+    if df is not None:
+        # Assume 'Year' is the predictor variable
+        predictor_column = 'Year'
 
-        # Select the target variable (all columns except the non-numerical ones)
-        target_variable = selected_rows.drop(non_numerical_columns, axis=1).columns
+        if predictor_column in df.columns:
+            # Select features (excluding the predictor column and non-numerical columns)
+            non_numerical_columns = ['Age', 'Tm', 'Pos', 'Player']
+            features = df.drop([predictor_column] + non_numerical_columns, axis=1)
 
-        if not target_variable.empty:
-            # Split the data into training and testing sets
-            X_train, X_test, y_train, y_test = train_test_split(
-                selected_rows[[predictor_column] + features.columns], selected_rows[target_variable], test_size=0.2, random_state=42)
+            # Select the target variable (all columns except the non-numerical ones)
+            target_variable = df.drop(non_numerical_columns, axis=1).columns
 
-            # Train a linear regression model
-            model = LinearRegression()
-            model.fit(X_train, y_train)
+            if not target_variable.empty:
 
-            # Make predictions for future years
-            future_years = np.arange(selected_rows[predictor_column].max() + 1, selected_rows[predictor_column].max() + 6).reshape(-1, 1)
-            future_features = pd.DataFrame(index=future_years, columns=features.columns)
+                # Assuming 'target_variable' is the name of your target column
+                df[target_variable] = pd.to_numeric(df[target_variable].iloc[:, 0], errors='coerce')
 
-            # Fill future features with meaningful values or use the average of existing values
-            future_features.fillna(features.mean(), inplace=True)
+                print(len(df[target_variable].iloc[:, 0]))
+                print(len(df[target_variable]))
 
-            # Predict future values
-            future_predictions = model.predict(pd.concat([future_years, future_features], axis=1))
+                # Split the data into training and testing sets
+                X_train, X_test, y_train, y_test = train_test_split(
+                    features, df[target_variable], test_size=0.2, random_state=42)
 
-            # Display the predictions in a new window
-            result_window = tk.Toplevel(window)
-            result_window.title("Future Predictions")
+                # Train a linear regression model
+                model = LinearRegression()
+                model.fit(X_train, y_train)
 
-            result_label = ttk.Label(result_window, text=f"Predicted values for the future years:\n\n{future_predictions}", font=('Helvetica', 12))
-            result_label.pack(pady=10)
-
+                messagebox.showinfo("Model Trained", "Prediction model trained successfully.")
+            else:
+                messagebox.showerror("Error", "No target variable found in the dataset.")
         else:
-            messagebox.showerror("Error", "No target variable found in the dataset.")
+            messagebox.showerror("Error", "Predictor column not found.")
     else:
-        messagebox.showerror("Error", "Predictor column not found.")
+        messagebox.showerror("Error", "No data available. Please upload a CSV file.")
+
 
 def on_treeview_scroll(*args):
     tree.yview(*args)
@@ -231,16 +229,14 @@ def show_data_table(row_data):
             return
 
         # Set columns to display in the radar chart
-        radar_columns = ['G', 'GS', 'MP', 'FG', 'FGA', 'FG%', '3P', '3PA', '3P%', '2P', '2PA', '2P%', 'eFG%', 'FT', 'FTA', 'FT%', 'ORB', 'DRB', 'TRB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS']
-
+        radar_columns = ['FG', 'FGA', 'FG%', '3P', '3PA', '3P%', '2P', '2PA', '2P%', 'eFG%', 'FT', 'FTA', 'FT%', 'ORB',
+                         'DRB', 'TRB', 'AST', 'STL', 'BLK']
 
         # Create a Figure and Axis for the radar chart
         fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
 
         # Normalize data to be between 0 and 1 for radar chart
-        scaler = MinMaxScaler()
-        normalized_data = scaler.fit_transform(details_rows[radar_columns])
-
+        values = details_rows[radar_columns].values.flatten().tolist()
         # Number of data points
         num_columns = len(radar_columns)
 
@@ -248,19 +244,44 @@ def show_data_table(row_data):
         angles = np.linspace(0, 2 * np.pi, num_columns, endpoint=False).tolist()
 
         # The plot is circular, so we need to "close the loop" and connect the first and last points
-        values = normalized_data.flatten().tolist()
+        # values = normalized_data.flatten().tolist()
         values += values[:1]
         angles += angles[:1]
 
+        # Ensure both angles and values have the same first dimension
+        if len(angles) != len(values):
+            values = values[:len(angles)]
+
+        # Define a colormap for teams
+        team_colors = plt.cm.get_cmap('tab10', len(details_rows['Tm'].unique()))
+
         # Plot the data
-        ax.fill(angles, values, color='blue', alpha=0.25)
-        ax.set_yticklabels([])  # Remove radial labels
+        for i, team in enumerate(details_rows['Tm'].unique()):
+            team_filtered_rows = details_rows[details_rows['Tm'] == team]
+            team_values = team_filtered_rows[radar_columns].values.flatten().tolist()
+            team_values += team_values[:1]  # Close the plot
 
-        # Add labels
-        ax.set_thetagrids([angle * 180 / np.pi for angle in angles[:-1]], radar_columns)
+            # Use a different color for each team
+            color = team_colors(i)
 
-        # Add a title
-        ax.set_title(f"{selected_player} - {selected_year}")
+            # Plot the radar chart line with a label for the team
+            ax.plot(angles, team_values, label=f"{team} ({selected_year})", color=color, linewidth=2)
+
+            # Plot the values inside the radar chart
+            for j, value in enumerate(team_values):
+                angle = (j / len(values)) * 2 * np.pi
+                ax.text(angle, value, f"{value:.2f}", color=color, ha='center', va='bottom', fontsize=10)
+
+        # Connect the data points with lines
+        ax.plot(angles, values, color='black', linewidth=1, linestyle='solid')
+
+        # Set the labels for each axis
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels(radar_columns)
+
+        # Add labels and legend
+        ax.set_title(f"{selected_player}'s Data for {selected_year}")
+        ax.legend(loc='upper right', bbox_to_anchor=(1.2, 1.0))
 
         # Create a Tkinter canvas to embed the Matplotlib chart
         canvas = FigureCanvasTkAgg(fig, master=details_window)
@@ -303,14 +324,33 @@ def show_data_table(row_data):
     rank_label = ttk.Label(left_frame, text="Rank:", style='Label.TLabel')
     rank_label.pack(padx=(0, 10), anchor='w')  # 'w' stands for west, aligning to the left
 
-    pos_label = ttk.Label(left_frame, text="Position:", style='Label.TLabel')
-    pos_label.pack(padx=(0, 10), anchor='w')
-
     age_label = ttk.Label(left_frame, text="Age:", style='Label.TLabel')
     age_label.pack(padx=(0, 10), anchor='w')
 
+    pos_label = ttk.Label(left_frame, text="Position:", style='Label.TLabel')
+    pos_label.pack(padx=(0, 10), anchor='w')
+
     team_label = ttk.Label(left_frame, text="Team:", style='Label.TLabel')
     team_label.pack(padx=(0, 10), anchor='w')
+
+    # New labels for additional columns
+    g_label = ttk.Label(left_frame, text="G:", style='Label.TLabel')
+    g_label.pack(padx=(0, 10), anchor='w')
+
+    gs_label = ttk.Label(left_frame, text="GS:", style='Label.TLabel')
+    gs_label.pack(padx=(0, 10), anchor='w')
+
+    mp_label = ttk.Label(left_frame, text="MP:", style='Label.TLabel')
+    mp_label.pack(padx=(0, 10), anchor='w')
+
+    tov_label = ttk.Label(left_frame, text="TOV:", style='Label.TLabel')
+    tov_label.pack(padx=(0, 10), anchor='w')
+
+    pf_label = ttk.Label(left_frame, text="PF:", style='Label.TLabel')
+    pf_label.pack(padx=(0, 10), anchor='w')
+
+    pts_label = ttk.Label(left_frame, text="PTS:", style='Label.TLabel')
+    pts_label.pack(padx=(0, 10), anchor='w')
 
     more_details_button = ttk.Button(left_frame, text="More Details", command=show_more_details)
     more_details_button.pack(pady=10)
@@ -326,13 +366,15 @@ def show_data_table(row_data):
     # Bind the filter_by_selected_year function to the ComboboxSelected event
     areachart_year.bind("<<ComboboxSelected>>",
                         lambda event: filter_by_selected_year(selected_player, areachart_year.get(), canvas, ax,
-                                                              rank_label, pos_label, age_label, team_label))
+                                                              rank_label, pos_label, age_label, team_label, g_label,
+                                                              gs_label, mp_label, tov_label, pf_label, pts_label))
 
     filter_by_selected_year(selected_player, areachart_year.get(), canvas, ax, rank_label, pos_label, age_label,
-                            team_label)
+                            team_label, g_label, gs_label, mp_label, tov_label, pf_label, pts_label)
 
 
-def filter_by_selected_year(selected_player, selected_year, canvas, ax, rank_label, pos_label, age_label, team_label):
+def filter_by_selected_year(selected_player, selected_year, canvas, ax, rank_label, pos_label, age_label, team_label,
+                             g_label, gs_label, mp_label, tov_label, pf_label, pts_label):
     global selected_rows, data_window
 
     # Filter the data for the selected year
@@ -372,6 +414,15 @@ def filter_by_selected_year(selected_player, selected_year, canvas, ax, rank_lab
         # Display teams in a column
         teams = '\n'.join(filtered_rows['Tm'].astype(str))
         team_label.config(text=f"Team:\n{teams}")
+
+        # Display additional columns
+        g_label.config(text=f"Games played: {'// '.join(filtered_rows['G'].astype(str))}")
+        gs_label.config(text=f"Games started: {'// '.join(filtered_rows['GS'].astype(str))}")
+        mp_label.config(text=f"Minutes per game: {'// '.join(filtered_rows['MP'].astype(str))}")
+        tov_label.config(text=f"Turnovers: {'// '.join(filtered_rows['TOV'].astype(str))}")
+        pf_label.config(text=f"Personal fouls: {'// '.join(filtered_rows['PF'].astype(str))}")
+        pts_label.config(text=f"Points: {'// '.join(filtered_rows['PTS'].astype(str))}")
+
     else:
         ttk.Label(data_window, text=f"No data available for {selected_year}.", font=('Helvetica', 12)).pack(pady=10)
 
@@ -383,7 +434,7 @@ def enable_controls():
     close_csv_button['state'] = 'active'
     upload_button['state'] = 'disabled'
     search_entry['state'] = 'active'
-
+    train_model_button['state'] = 'active'
 def close_csv():
     global df, all_columns
     df = None
@@ -397,6 +448,7 @@ def close_csv():
     upload_button['state'] = 'active'
     close_csv_button['state'] = 'disabled'
     search_entry['state'] = 'disabled'
+    train_model_button['state'] = 'disabled'
 
 
 error_message_shown = False
@@ -499,6 +551,10 @@ close_csv_button.pack(side='right')
 
 upload_button = ttk.Button(window, text="Upload CSV", command=upload_csv)
 upload_button.pack(side='right')
+
+train_model_button = ttk.Button(window, text="Train Prediction Model", command=train_prediction_model, state='disabled')
+train_model_button.pack(side='left', padx=10)
+
 
 reset_button = ttk.Button(window, text="Reset Filters", command=reset_filters, state='disabled')
 reset_button.pack(side='right')
