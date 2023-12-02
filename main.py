@@ -291,52 +291,6 @@ def show_data_table(row_data):
         # Draw the chart on the canvas
         canvas.draw()
 
-    def predict_stats():
-        # Filter rows for the selected player
-        player_rows = selected_rows[selected_rows['Player'] == selected_player]
-
-        # Check if there are enough samples for splitting
-        if len(player_rows) < 2:
-            messagebox.showinfo("Insufficient Data", "Insufficient data to predict stats.")
-            return
-
-        # Features and target variable
-        columns_to_predict = ['G', 'GS', 'MP', 'FG', 'FGA', 'FG%', '3P', '3PA', '3P%', '2P', '2PA', '2P%', 'eFG%',
-                              'FT', 'FTA', 'FT%', 'ORB', 'DRB', 'TRB', 'AST', 'STL', 'BLK', 'TOV', 'PF']
-        features = player_rows[columns_to_predict]
-        target = player_rows[columns_to_predict]  # Change the target variable to include all columns
-
-        # Split the data into training and testing sets
-        X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42)
-
-        # Create a linear regression model
-        model = LinearRegression()
-
-        # Train the model
-        model.fit(X_train, y_train)
-
-        # Use the model to predict future values
-        future_features = np.array([[row[col] for col in columns_to_predict] for index, row in player_rows.iterrows()])
-        future_predictions = model.predict(future_features)
-
-        # Create a new window for predictions
-        prediction_window = tk.Toplevel(window)
-        prediction_window.title(f"Predicted Stats - {selected_player} (2022-2023)")
-
-        # Create labels for the table headers
-        ttk.Label(prediction_window, text="Column", font=('Helvetica', 12, 'bold')).grid(row=0, column=0, padx=5,
-                                                                                         pady=5)
-        ttk.Label(prediction_window, text="Prediction", font=('Helvetica', 12, 'bold')).grid(row=0, column=1, padx=5,
-                                                                                             pady=5)
-
-        # Display the predictions in the table
-        for i, col in enumerate(columns_to_predict):
-            prediction = future_predictions[:, i]  # Extract predictions for the current column
-            for j, pred_value in enumerate(prediction):
-                ttk.Label(prediction_window, text=f"{col}_{j}", font=('Helvetica', 10)).grid(
-                    row=i * len(prediction) + j + 1, column=0, padx=5, pady=5)
-                ttk.Label(prediction_window, text=f"{pred_value:.2f}", font=('Helvetica', 10)).grid(
-                    row=i * len(prediction) + j + 1, column=1, padx=5, pady=5)
 
     selected_player = row_data[0]
     selected_rows = df[df['Player'] == selected_player]
@@ -401,7 +355,8 @@ def show_data_table(row_data):
 
     # Check if the latest year is 2021-2022
     if '2021-2022' in unique_years_str:
-        predict_button = ttk.Button(left_frame, text="Predict Stats", command=predict_stats)
+        predict_button = ttk.Button(left_frame, text="Predict Stats",
+                                    command=lambda: predict_stats(selected_player))
         predict_button.pack(pady=10)
 
     fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
@@ -410,33 +365,8 @@ def show_data_table(row_data):
     canvas_widget.pack(expand=True, fill='both')
 
     # Draw the chart on the canvas
-    for index, row in selected_rows.iterrows():
-        values = row[['G', 'GS', 'MP', 'TOV', 'PF', 'PTS']].values.flatten().tolist()
-        angles = np.linspace(0, 2 * np.pi, len(values), endpoint=False).tolist()
-        values += values[:1]
-        angles += angles[:1]
-
-        ax.plot(angles, values, label=f"{row['Tm']} ({row['Year']})", linewidth=2)
-
-        for j, value in enumerate(values[:-1]):
-            angle = (j / len(values)) * 2 * np.pi
-            ax.text(angle, value, f"{value}", color='black', ha='center', va='bottom', fontsize=10)
-
-    # Set the labels for each axis
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(['G', 'GS', 'MP', 'TOV', 'PF', 'PTS'])
-
-    # Add labels and legend
-    ax.set_title(f"{selected_player}'s Data for {areachart_year.get()}")
-    ax.legend(loc='upper right', bbox_to_anchor=(1.2, 1.0))
-
-    # Create a Tkinter canvas to embed the Matplotlib chart
-    canvas = FigureCanvasTkAgg(fig, master=right_frame)
-    canvas_widget = canvas.get_tk_widget()
-    canvas_widget.pack(expand=True, fill='both')
-
-    # Draw the chart on the canvas
-    canvas.draw()
+    filter_by_selected_year(selected_player, areachart_year.get(), canvas, ax, rank_label, pos_label, age_label,
+                            team_label, g_label, gs_label, mp_label, tov_label, pf_label, pts_label)
 
     # Bind the filter_by_selected_year function to the ComboboxSelected event
     areachart_year.bind("<<ComboboxSelected>>",
@@ -444,9 +374,59 @@ def show_data_table(row_data):
                                                               rank_label, pos_label, age_label, team_label, g_label,
                                                               gs_label, mp_label, tov_label, pf_label, pts_label))
 
-    filter_by_selected_year(selected_player, areachart_year.get(), canvas, ax, rank_label, pos_label, age_label,
-                            team_label, g_label, gs_label, mp_label, tov_label, pf_label, pts_label)
 
+
+def predict_stats(selected_player):
+        # Filter rows for the selected player
+        player_rows = selected_rows[selected_rows['Player'] == selected_player]
+
+        # Check if there are enough samples for splitting
+        if len(player_rows) < 2:
+            messagebox.showinfo("Insufficient Data", "Insufficient data to predict stats.")
+            return
+
+        # Features and target variable
+        columns_to_predict = ['G', 'GS', 'MP', 'FG', 'FGA', 'FG%', '3P', '3PA', '3P%', '2P', '2PA', '2P%', 'eFG%',
+                              'FT', 'FTA', 'FT%', 'ORB', 'DRB', 'TRB', 'AST', 'STL', 'BLK', 'TOV', 'PF']
+        features = player_rows[columns_to_predict]
+        target = player_rows[columns_to_predict]  # Change the target variable to include all columns
+
+        # Split the data into training and testing sets
+        X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42)
+
+        # Create a linear regression model
+        model = LinearRegression()
+
+        # Train the model
+        model.fit(X_train, y_train)
+
+        # Use the model to predict future values
+        future_features = np.array([[row[col] for col in columns_to_predict] for _, row in player_rows.iterrows()])
+        future_predictions = model.predict(future_features)
+
+        # Create a new window for predictions
+        prediction_window = tk.Toplevel(window)
+        prediction_window.title(f"Predicted Stats - {selected_player} (2022-2023)")
+
+        # Get the screen width and height
+        screen_width = prediction_window.winfo_screenwidth()
+        screen_height = prediction_window.winfo_screenheight()
+
+        # Calculate the position for centering the window
+        x_position = (screen_width - prediction_window.winfo_reqwidth()) / 2
+        y_position = (screen_height - prediction_window.winfo_reqheight()) / 2
+
+        # Set the window position
+        prediction_window.geometry("+%d+%d" % (x_position, y_position))
+
+        # Create a text widget
+        text_widget = tk.Text(prediction_window, wrap=tk.WORD, width=30, height=10)
+        text_widget.grid(row=1, column=0, padx=5, pady=5)
+
+        # Display the predictions in the text widget
+        text_widget.insert(tk.END, "Column\tPrediction\n")
+        for col, prediction in zip(columns_to_predict, future_predictions[0]):
+            text_widget.insert(tk.END, f"{col}\t{prediction:.2f}\n")
 
 def filter_by_selected_year(selected_player, selected_year, canvas, ax, rank_label, pos_label, age_label, team_label,
                              g_label, gs_label, mp_label, tov_label, pf_label, pts_label):
