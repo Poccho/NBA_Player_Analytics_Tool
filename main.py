@@ -1,13 +1,13 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import pandas as pd
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import MinMaxScaler
 import numpy as np
+import seaborn as sns
+import mplcursors
 
 
 def on_close():
@@ -375,6 +375,42 @@ def show_data_table(row_data):
                                                               gs_label, mp_label, tov_label, pf_label, pts_label))
 
 
+def calculate_total_stats():
+    if df is not None:
+        # Retrieve the selected category from the Combobox
+        selected_category = category_var.get()
+
+        # Check if the selected column is numeric before calculating the total
+        if pd.api.types.is_numeric_dtype(df[selected_category]):
+            total_stats = df.groupby('Player')[selected_category].sum()
+
+            # Filter out players with a total value less than 1
+            total_stats = total_stats[total_stats >= 1]
+
+            if not total_stats.empty:
+                # Create a new window to display scatter plots
+                total_stats_window = tk.Toplevel(window)
+                total_stats_window.title(f'Total Stats Scatter Plots - {selected_category}')
+
+                fig, ax = plt.subplots(figsize=(8, 6))
+                scatter = sns.scatterplot(x=total_stats.index, y=total_stats, marker='o', color='blue')
+
+                # Use mplcursors to display annotations on hover
+                mplcursors.cursor(scatter, hover=True).connect(
+                    "add",
+                    lambda sel: sel.annotation.set_text(f"{df['Player'][sel.target.index]}\n{selected_category}: {sel.target[1]:.2f}"))
+
+                plt.title(f'Total {selected_category} for each player')
+                plt.ylabel(selected_category)
+                ax.set_xticklabels([])  # Remove x-axis labels
+                plt.xticks(rotation=90)
+                plt.xlabel('')  # Set an empty string for x-axis label
+                plt.tight_layout()
+
+                # Embed the matplotlib figure in the Tkinter window
+                canvas = FigureCanvasTkAgg(fig, master=total_stats_window)
+                canvas_widget = canvas.get_tk_widget()
+                canvas_widget.pack(expand=True, fill='both')
 
 def predict_stats(selected_player):
         # Filter rows for the selected player
@@ -489,6 +525,10 @@ def enable_controls():
     close_csv_button['state'] = 'active'
     upload_button['state'] = 'disabled'
     search_entry['state'] = 'active'
+    category_combobox['state'] = 'readonly'
+    avg_stats_button['state'] = 'active'
+
+
 def close_csv():
     global df, all_columns
     df = None
@@ -502,12 +542,14 @@ def close_csv():
     upload_button['state'] = 'active'
     close_csv_button['state'] = 'disabled'
     search_entry['state'] = 'disabled'
+    category_combobox['state'] = 'disabled'
+    avg_stats_button['state'] = 'disabled'
+
 
 
 error_message_shown = False
 search_delay = 1000  # 1000 milliseconds (1 second)
 
-# Add this line at the beginning of your script
 after_id = None
 
 def search_players(event):
@@ -620,12 +662,22 @@ pos_combobox.pack(side='right')
 pos_label = ttk.Label(window, text="Position:")
 pos_label.pack(side='right', padx=(10, 0))
 
+avg_stats_button = ttk.Button(window, text="Plot Average Stats", command=calculate_total_stats, state='disabled')
+avg_stats_button.pack(side='left', padx=10)
+
+categories = ['G', 'GS', 'MP', 'FG', 'FGA', 'FG%', '3P', '3PA', '3P%', '2P', '2PA', '2P%', 'eFG%', 'FT', 'FTA', 'FT%',
+              'ORB', 'DRB', 'TRB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS']
+
+category_var = tk.StringVar()
+category_combobox = ttk.Combobox(window, textvariable=category_var, values=categories, state="disabled")
+category_combobox.set(categories[0])  # Set the default value
+category_combobox.pack(side='left', padx=10)
 
 search_label = ttk.Label(window, text="Search Player:")
-search_label.pack(side='left', padx=(10, 0))
+search_label.pack(side='right', padx=(10, 0))
 
 search_entry = ttk.Entry(window, state='disabled')
-search_entry.pack(side='left', padx=10)
+search_entry.pack(side='right', padx=10)
 search_entry.bind('<KeyRelease>', search_players)  # Bind KeyRelease event to the search_players function
 
 
