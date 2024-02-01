@@ -52,7 +52,7 @@ This documentation provides an in-depth explanation of the attributes included i
    
 4. Upload player data:
 
-    - Prepare a JSON file with player statistics (e.g., `NBA_Player_Stats.json`).
+    - Prepare a csv file with player statistics (e.g., `NBA_Player_Stats.csv`).
   
 
 ## Usage
